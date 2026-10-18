@@ -1,6 +1,9 @@
 import { appPath } from "@agent-native/core/client/api-path";
+import { callAction } from "@agent-native/core/client/hooks";
 
-export const MAX_FILE_BYTES = 25 * 1024 * 1024;
+import { COURSE_UPLOAD_CHUNK_BYTES, MAX_COURSE_FILE_BYTES } from "./course-upload-limits";
+
+export const MAX_FILE_BYTES = MAX_COURSE_FILE_BYTES;
 
 export type PathedFile = { file: File; path: string };
 
@@ -42,10 +45,6 @@ export function formatBytes(n: number) {
   if (n < 1024 ** 2) return `${(n / 1024).toFixed(0)} KB`;
   if (n < 1024 ** 3) return `${(n / 1024 ** 2).toFixed(1)} MB`;
   return `${(n / 1024 ** 3).toFixed(2)} GB`;
-}
-
-function baseName(path: string) {
-  return path.split("/").pop() ?? path;
 }
 
 function titleFromFolder(folder: string) {
@@ -168,32 +167,83 @@ export async function groupIntoCourses(
   return { courses, skipped };
 }
 
-export async function uploadOne(file: File, signal?: AbortSignal): Promise<string> {
-  let lastError: unknown;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const body = new FormData();
-      body.append("file", file, baseName(file.name));
-      const res = await fetch(appPath("/_agent-native/file-upload"), {
-        method: "POST",
-        body,
-        credentials: "include",
-        signal,
-      });
-      const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
-      if (!res.ok || !data.url) {
-        const err = new Error(data.error || `Upload failed (${res.status})`);
-        // Size, type, auth, and storage errors won't succeed on retry.
-        if ([400, 401, 413, 415, 503].includes(res.status)) throw Object.assign(err, { final: true });
-        throw err;
-      }
-      return data.url;
-    } catch (e) {
-      lastError = e;
-      if (signal?.aborted || (e as { final?: boolean }).final) break;
+export async function uploadOne(
+  file: File,
+  signal?: AbortSignal,
+  onProgress?: (uploadedBytes: number) => void,
+): Promise<string> {
+  const checkCancelled = () => signal?.throwIfAborted();
+  checkCancelled();
+  if (file.size > MAX_FILE_BYTES) throw new Error("Files must be 5 GiB or smaller.");
+
+  let id: string | undefined;
+  try {
+    // Let start return its id even if cancellation arrives in flight, so it can be cleaned up.
+    const started: unknown = await callAction("manage-course-upload", {
+      operation: "start",
+      filename: file.name,
+      mimeType: file.type || "application/octet-stream",
+      sizeBytes: file.size,
+    });
+    if (typeof started !== "object" || started === null || !("id" in started) || typeof started.id !== "string" || !started.id) {
+      throw new Error("Couldn't start the file upload. Please retry.");
     }
+    id = started.id;
+    checkCancelled();
+    if (!("chunkBytes" in started) || started.chunkBytes !== COURSE_UPLOAD_CHUNK_BYTES) {
+      throw new Error("Upload settings have changed. Refresh this page and retry.");
+    }
+
+    const parts = Math.max(1, Math.ceil(file.size / COURSE_UPLOAD_CHUNK_BYTES));
+    for (let partNumber = 1; partNumber <= parts; partNumber++) {
+      checkCancelled();
+      const start = (partNumber - 1) * COURSE_UPLOAD_CHUNK_BYTES;
+      const end = Math.min(start + COURSE_UPLOAD_CHUNK_BYTES, file.size);
+      const chunk = file.slice(start, end);
+      for (let attempt = 0; ; attempt++) {
+        checkCancelled();
+        let res: Response;
+        try {
+          res = await fetch(appPath(`/api/course-uploads/${encodeURIComponent(id)}/${partNumber}`), {
+            method: "PUT",
+            headers: { "Content-Type": "application/octet-stream" },
+            body: chunk,
+            credentials: "include",
+            signal,
+          });
+        } catch (error) {
+          checkCancelled();
+          // Fetch reports transient network failures as TypeError. Never retry cancellation.
+          if (error instanceof TypeError && attempt < 2) continue;
+          throw new Error("Couldn't upload a file chunk. Check your connection and retry.");
+        }
+        checkCancelled();
+        if (res.ok) break;
+        if (res.status >= 500 && res.status <= 599 && attempt < 2) continue;
+        throw new Error(`Couldn't upload a file chunk (${res.status}). Please retry.`);
+      }
+      checkCancelled();
+      onProgress?.(end);
+    }
+
+    checkCancelled();
+    const completed: unknown = await callAction("manage-course-upload", { operation: "complete", id }, { signal });
+    checkCancelled();
+    if (typeof completed !== "object" || completed === null || !("url" in completed) || typeof completed.url !== "string" || !completed.url) {
+      throw new Error("Couldn't finish the file upload. Please retry.");
+    }
+    return completed.url;
+  } catch (error) {
+    if (id) {
+      try {
+        // Cleanup must run independently of the cancelled upload's signal.
+        await callAction("manage-course-upload", { operation: "abort", id });
+      } catch {
+        console.warn("Upload cleanup could not be confirmed. Temporary upload data may remain.");
+      }
+    }
+    throw error;
   }
-  throw lastError instanceof Error ? lastError : new Error("Upload failed");
 }
 
 export async function runPool<T>(items: T[], limit: number, worker: (item: T) => Promise<void>) {

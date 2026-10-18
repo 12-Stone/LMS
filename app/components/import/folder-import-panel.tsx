@@ -29,6 +29,8 @@ type Progress = {
   state: "waiting" | "uploading" | "saving" | "done" | "failed" | "cancelled";
   uploaded: number;
   total: number;
+  uploadedBytes: number;
+  totalBytes: number;
   failedFiles: string[];
   error?: string;
 };
@@ -56,6 +58,7 @@ export function FolderImportPanel() {
   const [running, setRunning] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const uploadedRefs = useRef(new Map<PathedFile, string>());
 
   useEffect(() => {
     let active = true;
@@ -69,6 +72,7 @@ export function FolderImportPanel() {
   }, []);
 
   const storageSaved = () => {
+    uploadedRefs.current.clear();
     const revision = ++storageRevision.current;
     setStorageReady(null);
     setVerifiedMessage(null);
@@ -128,6 +132,7 @@ export function FolderImportPanel() {
     setScanning(true);
     try {
       const { courses, skipped: s } = await groupIntoCourses(files, { category });
+      uploadedRefs.current.clear();
       setDrafts(courses);
       setSkipped(s);
       setProgress({});
@@ -154,7 +159,17 @@ export function FolderImportPanel() {
     const controller = new AbortController();
     abortRef.current = controller;
     setRunning(true);
-    for (const d of targets) setProg(d.key, { state: "waiting", uploaded: 0, total: d.files.length, failedFiles: [] });
+    for (const d of targets) {
+      setProg(d.key, {
+        state: "waiting",
+        uploaded: 0,
+        total: d.files.length,
+        uploadedBytes: 0,
+        totalBytes: sizeOf(d.files),
+        failedFiles: [],
+        error: undefined,
+      });
+    }
 
     for (const d of targets) {
       if (controller.signal.aborted) {
@@ -164,10 +179,20 @@ export function FolderImportPanel() {
       setProg(d.key, { state: "uploading" });
       const uploaded: { name: string; path: string; kind: string; mimeType: string; sizeBytes: number; url: string }[] = [];
       const failedFiles: string[] = [];
+      const fileBytes = new Map<PathedFile, number>();
+      let uploadedBytes = 0;
       await runPool(d.files, 4, async (f) => {
         if (controller.signal.aborted) return;
         try {
-          const url = await uploadOne(f.file, controller.signal);
+          const reportBytes = (bytes: number) => {
+            uploadedBytes += bytes - (fileBytes.get(f) ?? 0);
+            fileBytes.set(f, bytes);
+            setProg(d.key, { uploadedBytes });
+          };
+          const url = uploadedRefs.current.get(f) ?? await uploadOne(f.file, controller.signal, reportBytes);
+          uploadedRefs.current.set(f, url);
+          reportBytes(f.file.size);
+          controller.signal.throwIfAborted();
           uploaded.push({
             name: f.path.split("/").pop() ?? f.path,
             path: f.path,
@@ -178,15 +203,23 @@ export function FolderImportPanel() {
           });
           setProgress((all) => ({ ...all, [d.key]: { ...all[d.key], uploaded: uploaded.length } }));
         } catch (e) {
-          if (!controller.signal.aborted) failedFiles.push(`${f.path}: ${(e as Error).message}`);
+          if (!controller.signal.aborted) {
+            failedFiles.push(`${f.path}: ${actionErrorMessage(e) ?? "Upload failed. Please retry."}`);
+          }
         }
       });
       if (controller.signal.aborted) {
         setProg(d.key, { state: "cancelled", failedFiles });
         continue;
       }
-      if (d.files.length && !uploaded.length) {
-        setProg(d.key, { state: "failed", failedFiles, error: "No files could be uploaded." });
+      if (failedFiles.length || uploaded.length !== d.files.length) {
+        setProg(d.key, {
+          state: "failed",
+          failedFiles,
+          error: uploaded.length
+            ? "Some files failed. The course was not saved. Retry to finish the remaining files."
+            : "No files could be uploaded. The course was not saved.",
+        });
         continue;
       }
       setProg(d.key, { state: "saving", failedFiles });
@@ -202,11 +235,16 @@ export function FolderImportPanel() {
           bucketId: bucketId === "none" ? undefined : bucketId,
           resources: uploaded.sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true })),
         });
+        for (const file of d.files) uploadedRefs.current.delete(file);
         setProg(d.key, { state: "done", failedFiles });
         // Imported courses shouldn't be re-created by "Retry failed".
         patch(d.key, { include: false });
       } catch (e) {
-        setProg(d.key, { state: "failed", failedFiles, error: (e as Error).message });
+        setProg(d.key, {
+          state: "failed",
+          failedFiles,
+          error: actionErrorMessage(e) ?? "Couldn't save the course. Please retry.",
+        });
       }
     }
     setRunning(false);
@@ -277,7 +315,7 @@ export function FolderImportPanel() {
       </details>
       <p className="text-xs text-muted-foreground">
         Saving does not upload course files or verify access. Verify connection writes, reads, and deletes a tiny test file.
-        Current import limit: 25 MB per file; larger files are skipped.
+        Current import limit: 5 GiB per file; larger files are skipped.
       </p>
     </section>
   );
@@ -338,7 +376,7 @@ export function FolderImportPanel() {
         />
         <p className="text-xs text-tsd-limestone/60">
           Optional per course: a <code>course.json</code> with title, description, category, difficulty, durationMinutes,
-          and format, or a <code>description.txt</code> / <code>README.md</code> for the description. Files over 25 MB are
+          and format, or a <code>description.txt</code> / <code>README.md</code> for the description. Files over 5 GiB are
           skipped.
         </p>
       </div>
@@ -476,7 +514,7 @@ export function FolderImportPanel() {
                         </p>
                         {d.oversize.length > 0 && (
                           <p className="mt-1 text-xs text-destructive">
-                            {d.oversize.length} {d.oversize.length === 1 ? "file is" : "files are"} over 25 MB and will be
+                            {d.oversize.length} {d.oversize.length === 1 ? "file is" : "files are"} over 5 GiB and will be
                             skipped: {d.oversize.map((f) => f.path).slice(0, 3).join(", ")}
                             {d.oversize.length > 3 ? "…" : ""}
                           </p>
@@ -562,7 +600,7 @@ export function FolderImportPanel() {
           <div className="flex flex-wrap gap-3">
             {running ? (
               <Button variant="outline" className="h-12" onClick={() => abortRef.current?.abort()}>
-                <IconX size={16} /> Stop after current files
+                <IconX size={16} /> Cancel import
               </Button>
             ) : (
               <>
@@ -618,7 +656,12 @@ function RowStatus({ p }: { p?: Progress }) {
           <span className="flex items-center gap-1.5 text-xs">
             <IconLoader2 size={12} className="animate-spin" /> {p.uploaded}/{p.total} files
           </span>
-          <ProgressBar value={(p.uploaded / Math.max(1, p.total)) * 100} />
+          <span className="block text-xs tabular-nums text-muted-foreground">
+            {formatBytes(p.uploadedBytes)} / {formatBytes(p.totalBytes)}
+          </span>
+          <ProgressBar
+            value={p.totalBytes > 0 ? (p.uploadedBytes / p.totalBytes) * 100 : (p.uploaded / Math.max(1, p.total)) * 100}
+          />
         </div>
       );
     case "saving":

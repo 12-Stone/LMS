@@ -2,7 +2,7 @@ import { fail } from "@agent-native/core/action";
 import { registerFileUploadProvider } from "@agent-native/core/file-upload";
 import { defineNitroPlugin } from "@agent-native/core/server";
 import { requireCapability } from "../access";
-import { courseStorageRequest, courseStorageScope, MAX_COURSE_FILE_BYTES, readCourseStorage, requireStorageResponse } from "../course-storage";
+import { courseStorageRequest, courseStorageScope, readCourseStorage, requireStorageResponse } from "../course-storage";
 import { getDb, schema } from "../db";
 
 export default defineNitroPlugin(() => {
@@ -14,7 +14,7 @@ export default defineNitroPlugin(() => {
     isConfiguredForRequest: async () => !!(await readCourseStorage(courseStorageScope().scopeId)),
     upload: async ({ data, filename, mimeType }) => {
       await requireCapability("manage-courses");
-      if (data.byteLength > MAX_COURSE_FILE_BYTES) fail("Course files must be 25 MB or smaller.", { statusCode: 413 });
+      if (data.byteLength > 25 * 1024 * 1024) fail("Use Bulk Import Studio's chunked uploader for files larger than 25 MiB.", { statusCode: 413 });
       const scope = courseStorageScope();
       const config = await readCourseStorage(scope.scopeId);
       if (!config) fail("Connect your private R2 bucket in Bulk Import Studio first.", { statusCode: 503 });

@@ -5,7 +5,7 @@ import { getRequestOrgId, getRequestUserEmail } from "@agent-native/core/server/
 import { AwsClient } from "aws4fetch";
 
 export const PRIVATE_COURSE_FILE_URL = /^\/api\/course-files\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
-export const MAX_COURSE_FILE_BYTES = 25 * 1024 * 1024;
+export { MAX_COURSE_FILE_BYTES } from "../app/lib/course-upload-limits";
 
 export function courseStorageScope() {
   const email = getRequestUserEmail()?.trim();
@@ -35,10 +35,12 @@ export type CourseStorage = NonNullable<Awaited<ReturnType<typeof readCourseStor
 export async function courseStorageRequest(
   config: CourseStorage,
   key: string,
-  method: "PUT" | "GET" | "DELETE",
-  options: { data?: Uint8Array; mimeType?: string; range?: string } = {},
+  method: "PUT" | "GET" | "DELETE" | "POST" | "HEAD",
+  options: { data?: Uint8Array; mimeType?: string; range?: string; query?: Record<string, string> } = {},
 ) {
-  const url = `${config.endpoint}/${encodeURIComponent(config.bucket)}/${key.split("/").map(encodeURIComponent).join("/")}`;
+  const target = new URL(`${config.endpoint}/${encodeURIComponent(config.bucket)}/${key.split("/").map(encodeURIComponent).join("/")}`);
+  for (const [key, value] of Object.entries(options.query ?? {})) target.searchParams.set(key, value);
+  const url = target.toString();
   const headers = new Headers();
   if (options.mimeType) headers.set("Content-Type", options.mimeType);
   if (options.range) headers.set("Range", options.range);

@@ -1,5 +1,11 @@
 import { sql } from "drizzle-orm";
-import { integer, pgTable, text } from "drizzle-orm/pg-core";
+import {
+  bigint,
+  integer,
+  pgTable,
+  primaryKey,
+  text,
+} from "drizzle-orm/pg-core";
 
 export const courses = pgTable("courses", {
   id: text("id").primaryKey(),
@@ -11,7 +17,9 @@ export const courses = pgTable("courses", {
   format: text("format").notNull().default("Video"),
   status: text("status").notNull().default("published"),
   source: text("source").notNull().default("manual"),
-  createdAt: text("created_at").notNull().default(sql`now()`),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`now()`),
 });
 
 export const buckets = pgTable("buckets", {
@@ -19,7 +27,9 @@ export const buckets = pgTable("buckets", {
   name: text("name").notNull(),
   description: text("description").notNull().default(""),
   audience: text("audience").notNull().default("All staff"),
-  createdAt: text("created_at").notNull().default(sql`now()`),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`now()`),
 });
 
 export const bucketCourses = pgTable("bucket_courses", {
@@ -46,9 +56,11 @@ export const courseResources = pgTable("course_resources", {
   path: text("path").notNull(),
   kind: text("kind").notNull().default("file"),
   mimeType: text("mime_type").notNull().default(""),
-  sizeBytes: integer("size_bytes").notNull().default(0),
+  sizeBytes: bigint("size_bytes", { mode: "number" }).notNull().default(0),
   url: text("url").notNull(),
-  createdAt: text("created_at").notNull().default(sql`now()`),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`now()`),
 });
 
 export const privateCourseFiles = pgTable("private_course_files", {
@@ -60,10 +72,29 @@ export const privateCourseFiles = pgTable("private_course_files", {
   bucket: text("bucket").notNull(),
   name: text("name").notNull(),
   mimeType: text("mime_type").notNull(),
-  sizeBytes: integer("size_bytes").notNull(),
-  courseId: text("course_id").references(() => courses.id),
-  createdAt: text("created_at").notNull().default(sql`now()`),
+  sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
+  uploadId: text("upload_id"),
+  uploadState: text("upload_state").notNull().default("complete"),
+  courseId: text("course_id").references(() => courses.id, {
+    onDelete: "set null",
+  }),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`now()`),
 });
+
+export const courseUploadParts = pgTable(
+  "course_upload_parts",
+  {
+    fileId: text("file_id")
+      .notNull()
+      .references(() => privateCourseFiles.id, { onDelete: "cascade" }),
+    partNumber: integer("part_number").notNull(),
+    etag: text("etag").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.fileId, table.partNumber] })],
+);
 
 export const assignments = pgTable("assignments", {
   id: text("id").primaryKey(),
@@ -75,7 +106,9 @@ export const assignments = pgTable("assignments", {
   progress: integer("progress").notNull().default(0),
   status: text("status").notNull().default("not_started"),
   completedAt: text("completed_at"),
-  createdAt: text("created_at").notNull().default(sql`now()`),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`now()`),
 });
 
 export const sops = pgTable("sops", {
@@ -87,7 +120,9 @@ export const sops = pgTable("sops", {
   status: text("status").notNull().default("approved"),
   summary: text("summary").notNull().default(""),
   body: text("body").notNull().default(""),
-  updatedAt: text("updated_at").notNull().default(sql`now()`),
+  updatedAt: text("updated_at")
+    .notNull()
+    .default(sql`now()`),
 });
 
 export const certificates = pgTable("certificates", {

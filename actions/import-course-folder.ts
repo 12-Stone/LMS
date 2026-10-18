@@ -49,6 +49,7 @@ export default defineAction({
           eq(schema.privateCourseFiles.ownerEmail, scope.email),
           scope.orgId ? eq(schema.privateCourseFiles.orgId, scope.orgId) : isNull(schema.privateCourseFiles.orgId),
           isNull(schema.privateCourseFiles.courseId),
+          eq(schema.privateCourseFiles.uploadState, "complete"),
         )).returning();
         if (files.length !== fileIds.length) fail("Some files are unavailable or already attached. Upload them again before importing.");
         const byId = new Map(files.map((file) => [file.id, file]));
