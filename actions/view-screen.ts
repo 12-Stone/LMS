@@ -10,6 +10,8 @@
 import { defineAction } from "@agent-native/core/action";
 import { readAppState } from "@agent-native/core/application-state";
 import { z } from "zod";
+import { requireCapability } from "../server/access";
+import { courseStorageScope, readCourseStorage } from "../server/course-storage";
 
 export default defineAction({
   description:
@@ -22,6 +24,11 @@ export default defineAction({
 
     const screen: Record<string, unknown> = {};
     if (navigation) screen.navigation = navigation;
+    if ((navigation as { view?: string } | null)?.view === "import") {
+      await requireCapability("manage-courses");
+      const storage = await readCourseStorage(courseStorageScope().scopeId);
+      screen.courseStorage = { configured: !!storage, private: true, maxFileBytes: 25 * 1024 * 1024 };
+    }
 
     if (Object.keys(screen).length === 0) {
       return "No application state found. Is the app running?";

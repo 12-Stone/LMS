@@ -31,6 +31,10 @@ For custom branding, keep `server/plugins/agent-native-email-branding.ts` aligne
   default; add one only when the user asks.
 - Use `navigate` when supported and `view-screen` for a fresh read of visible details; basic navigation is already in `<current-screen>`.
 
+## Course storage
+
+Bulk Import Studio (`/import`) uses private Cloudflare R2 through the shared `StorageSettingsForm` and workspace vault. Never request keys in chat or enable public bucket access. `get-file-storage` reads non-secret setup status; `manage-file-storage` is the shared settings transport. `check-course-storage` verifies write/read/delete using a temporary object. `import-course-folder` accepts only authenticated `/api/course-files/<upload-id>` references from the current uploader; reads enforce invitation, organization, and parent-course visibility. Unlinked uploads cannot be downloaded. Files are limited to 25 MB each. Development preview bypasses sign-in, so private files are not access-protected within that preview; production auth remains required.
+
 ## Building a domain app
 
 Choose the primary workflow and route before editing. Build on the blank canvas in `app/routes/_index.tsx` or add domain routes under `app/routes/`. This starter has no Chat route, sidebar, header, or agent rail; add only the navigation the product needs. Set `app.homePath` in the existing `defineAppConfig` in `server/plugins/config.ts` as `DEVELOPING.md` describes.
