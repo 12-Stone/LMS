@@ -1,0 +1,13 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "buildCommand": "NITRO_PRESET=node pnpm build"
+  },
+  "deploy": {
+    "preDeployCommand": ["pnpm migrate:production"],
+    "startCommand": "pnpm start",
+    "healthcheckPath": "/_agent-native/ping",
+    "healthcheckTimeout": 300,
+    "restartPolicyType": "ON_FAILURE"
+  }
+}
