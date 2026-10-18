@@ -116,6 +116,9 @@ importers:
       ai-sdk-ollama:
         specifier: ^3.8.8
         version: 3.8.8(ai@6.0.258(zod@4.6.5))(zod@4.6.5)
+      aws4fetch:
+        specifier: ^1.0.20
+        version: 1.0.20
       dotenv:
         specifier: ^17.2.1
         version: 17.4.2
@@ -4117,6 +4120,9 @@ packages:
   auto-bind@5.0.1:
     resolution: {integrity: sha512-ooviqdwwgfIfNmDwo94wlshcdzfO64XV0Cg6oDsDYBJfITDz1EngD2z7DkbvCWn+XIMsIqW27sEVF6qcpJrRcg==}
     engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
+
+  aws4fetch@1.0.20:
+    resolution: {integrity: sha512-/djoAN709iY65ETD6LKCtyyEI04XIBP5xVvfmNxsEP0uJB5tyaGBztSryRr4HqMStr9R06PisQE7m9zDTXKu6g==}
 
   axios@1.18.1:
     resolution: {integrity: sha512-3nTvFlvpn9Zu/RkHUqtc7/+al4UpRW5az71ap5zccp6e8RAYEzhMTecX8Dz1wWDYrPpUoB1HAQEGEAEvUr7S9g==}
@@ -10584,6 +10590,8 @@ snapshots:
     optional: true
 
   auto-bind@5.0.1: {}
+
+  aws4fetch@1.0.20: {}
 
   axios@1.18.1:
     dependencies:

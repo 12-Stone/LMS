@@ -1,4 +1,5 @@
-import { useActionMutation, useActionQuery } from "@agent-native/core/client/hooks";
+import { actionErrorMessage, useActionMutation, useActionQuery } from "@agent-native/core/client/hooks";
+import { StorageSettingsForm } from "@agent-native/toolkit/app/settings";
 import { IconAlertTriangle, IconCheck, IconFolderOpen, IconLoader2, IconX } from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
@@ -37,7 +38,13 @@ const sizeOf = (files: PathedFile[]) => files.reduce((s, f) => s + f.file.size, 
 export function FolderImportPanel() {
   const { data: buckets = [] } = useActionQuery("list-buckets", {});
   const importCourse = useActionMutation("import-course-folder");
+  const checkStorage = useActionMutation("check-course-storage");
   const [storageReady, setStorageReady] = useState<boolean | null>(null);
+  const [setupOpen, setSetupOpen] = useState(true);
+  const [verifying, setVerifying] = useState(false);
+  const [verifiedMessage, setVerifiedMessage] = useState<string | null>(null);
+  const [storageError, setStorageError] = useState<string | null>(null);
+  const storageRevision = useRef(0);
   const [dragging, setDragging] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [drafts, setDrafts] = useState<CourseDraft[]>([]);
@@ -51,8 +58,63 @@ export function FolderImportPanel() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    fetchStorageConfigured().then(setStorageReady);
+    let active = true;
+    const revision = storageRevision.current;
+    void fetchStorageConfigured().then((configured) => {
+      if (active && revision === storageRevision.current) setStorageReady(configured);
+    });
+    return () => {
+      active = false;
+    };
   }, []);
+
+  const storageSaved = () => {
+    const revision = ++storageRevision.current;
+    setStorageReady(null);
+    setVerifiedMessage(null);
+    setStorageError(null);
+    void fetchStorageConfigured().then((configured) => {
+      if (revision === storageRevision.current) setStorageReady(configured);
+    });
+  };
+
+  const storageCleared = () => {
+    storageRevision.current += 1;
+    setStorageReady(false);
+    setVerifiedMessage(null);
+    setStorageError(null);
+    setSetupOpen(true);
+  };
+
+  const verifyStorage = async () => {
+    if (verifying || running || storageReady !== true) return;
+    setVerifying(true);
+    setVerifiedMessage(null);
+    setStorageError(null);
+    const revision = storageRevision.current;
+    try {
+      const result = await checkStorage.mutateAsync({});
+      const configured = await fetchStorageConfigured();
+      if (revision !== storageRevision.current) return;
+      setStorageReady(configured);
+      if (!result.ok || !configured) {
+        setStorageError("Storage isn't ready. Review and save the configuration, then verify the connection again.");
+        setSetupOpen(true);
+        return;
+      }
+      setVerifiedMessage(result.message || "Connection verified.");
+      setSetupOpen(false);
+    } catch (error) {
+      if (revision !== storageRevision.current) return;
+      setStorageError(
+        actionErrorMessage(error) ??
+          "Couldn't verify storage. Check the endpoint, bucket name, and R2 key permissions, then try again.",
+      );
+      setSetupOpen(true);
+    } finally {
+      setVerifying(false);
+    }
+  };
 
   useEffect(() => {
     if (!running) return;
@@ -151,23 +213,80 @@ export function FolderImportPanel() {
     abortRef.current = null;
   };
 
-  if (storageReady === false) {
-    return (
-      <div className="flex gap-3 rounded-[4px] border border-destructive/30 bg-destructive/5 p-5 text-sm">
-        <IconAlertTriangle size={18} className="mt-0.5 shrink-0 text-destructive" />
-        <div>
-          <p className="font-medium">File storage isn't connected yet.</p>
-          <p className="mt-1 text-muted-foreground">
-            Course files need somewhere durable to live before they can be uploaded. Connect Builder.io file hosting or
-            another storage provider, then return to this page. Spreadsheet import still works without storage.
+  const storageSetup = (
+    <section className="space-y-5 rounded-[4px] border border-border bg-card p-5 sm:p-6" aria-label="Course file storage">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0 space-y-2">
+          <h2 className="font-display text-2xl">Private course storage</h2>
+          <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
+            {verifying ? (
+              <>
+                <IconLoader2 size={16} className="shrink-0 animate-spin" aria-hidden />
+                Testing write, read, and delete access…
+              </>
+            ) : verifiedMessage ? (
+              <>
+                <IconCheck size={16} className="shrink-0" aria-hidden />
+                {verifiedMessage}
+              </>
+            ) : storageReady === null ? (
+              "Checking saved storage configuration…"
+            ) : storageReady ? (
+              "Configuration saved — connection not yet verified."
+            ) : (
+              "Connect your private R2 bucket, then verify access before importing."
+            )}
           </p>
         </div>
+        <Button
+          type="button"
+          variant={verifiedMessage ? "outline" : "default"}
+          disabled={storageReady !== true || verifying || running}
+          onClick={() => void verifyStorage()}
+        >
+          {verifying ? "Verifying…" : "Verify connection"}
+        </Button>
       </div>
-    );
-  }
+      {storageError && (
+        <div role="alert" className="flex items-start gap-2 rounded-[4px] border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+          <IconAlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden />
+          <p className="min-w-0 break-words">{storageError}</p>
+        </div>
+      )}
+      <details open={setupOpen} onToggle={(event) => setSetupOpen(event.currentTarget.open)}>
+        <summary className="cursor-pointer text-sm font-medium underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring">
+          {verifiedMessage ? "Manage storage setup" : "Storage setup"}
+        </summary>
+        <div className="mt-4 space-y-5">
+          <div className="space-y-2 border-l-2 border-tsd-gold/70 pl-4 text-sm text-muted-foreground">
+            <p>
+              Choose <strong className="text-foreground">Cloudflare R2</strong>. Use Cloudflare’s{" "}
+              <strong className="text-foreground">S3 API endpoint</strong>, your actual bucket name, and region{" "}
+              <code>auto</code>. Enter your S3 keys only in the secure form below.
+            </p>
+            <p>
+              Leave <strong className="text-foreground">Public URL blank</strong> and keep Cloudflare public access off.
+              Course files are served through authenticated app URLs; a public bucket or domain isn't needed.
+            </p>
+          </div>
+          <fieldset disabled={verifying || running} className="min-w-0">
+            <legend className="sr-only">Storage configuration</legend>
+            <StorageSettingsForm onSaved={storageSaved} onCleared={storageCleared} />
+          </fieldset>
+        </div>
+      </details>
+      <p className="text-xs text-muted-foreground">
+        Saving does not upload course files or verify access. Verify connection writes, reads, and deletes a tiny test file.
+        Current import limit: 25 MB per file; larger files are skipped.
+      </p>
+    </section>
+  );
+
+  if (storageReady !== true || !verifiedMessage) return storageSetup;
 
   return (
     <div className="space-y-8">
+      {storageSetup}
       <div
         onDragOver={(e) => {
           e.preventDefault();

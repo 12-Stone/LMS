@@ -51,6 +51,20 @@ export const courseResources = pgTable("course_resources", {
   createdAt: text("created_at").notNull().default(sql`now()`),
 });
 
+export const privateCourseFiles = pgTable("private_course_files", {
+  id: text("id").primaryKey(),
+  ownerEmail: text("owner_email").notNull(),
+  orgId: text("org_id"),
+  storageScopeId: text("storage_scope_id").notNull(),
+  endpoint: text("endpoint").notNull(),
+  bucket: text("bucket").notNull(),
+  name: text("name").notNull(),
+  mimeType: text("mime_type").notNull(),
+  sizeBytes: integer("size_bytes").notNull(),
+  courseId: text("course_id").references(() => courses.id),
+  createdAt: text("created_at").notNull().default(sql`now()`),
+});
+
 export const assignments = pgTable("assignments", {
   id: text("id").primaryKey(),
   personId: text("person_id").notNull(),
