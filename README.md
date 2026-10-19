@@ -1,8 +1,6 @@
-# My App
+# Twelve Stone Academy
 
-An app built with [Builder.io](https://www.builder.io) on the
-[Agent-Native](https://agent-native.com?utm_source=github&utm_medium=referral&utm_content=fusion-starter-readme) framework. Replace this paragraph with
-what the app does and who it's for.
+Twelve Stone Academy is the team's training and development hub, with courses, assignments, knowledge resources, and bulk course imports. Course files can be stored in a private Cloudflare R2 bucket and downloaded through authenticated app routes.
 
 ## Develop locally
 
@@ -13,8 +11,9 @@ pnpm install
 pnpm dev
 ```
 
-`.env.example` sets `AUTH_DISABLED=true` as a commented-out option; uncomment it
-to skip sign-in while developing.
+`pnpm dev` skips sign-in for local preview only. Production uses the invite-only login flow. Do not expose the development preview when testing private course data.
+
+Apply app migrations with `pnpm db:migrate`. Connect course storage in Bulk Import Studio using the shared storage form: choose Cloudflare R2, enter the S3 endpoint, bucket, and bucket-scoped Object Read & Write credentials, use region `auto`, and leave Public URL blank. Keep public bucket access disabled. Verify connection before importing. Course imports support files up to 5 GiB each using bounded 5 MiB multipart chunks, per-chunk retries, and cancellation; larger files are skipped. Incomplete or partially failed courses are not saved. Credentials are workspace-scoped, so configure them again under the production administrator or organization rather than copying development secrets.
 
 ## Project layout
 

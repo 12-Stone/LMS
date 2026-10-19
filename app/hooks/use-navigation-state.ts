@@ -22,12 +22,14 @@ export function useNavigationState() {
 }
 
 function viewForPath(pathname: string): string {
-  if (pathname === "/") return "home";
+  if (pathname === "/import") return "import";
   return "home";
 }
 
 function pathForView(view?: string): string {
   switch (view) {
+    case "import":
+      return "/import";
     case "home":
       return "/";
     default:

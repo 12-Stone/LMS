@@ -15,6 +15,10 @@ export async function findPersonByEmail(email: string) {
   return row;
 }
 
+function isLocalDevIdentity(email: string) {
+  return process.env.NODE_ENV === "development" && email.trim().toLowerCase() === "dev@local.test";
+}
+
 export async function isInvitedEmail(email: string) {
   return isAdminEmail(email) || !!(await findPersonByEmail(email));
 }
@@ -22,8 +26,9 @@ export async function isInvitedEmail(email: string) {
 // Only ADMIN_EMAIL is an administrator. Everyone else must have been added
 // to People by the admin; unknown accounts get no access at all.
 export async function getCurrentPerson(): Promise<Person> {
-  const email = getRequestUserEmail()?.trim().toLowerCase();
-  if (!email) fail("Sign in required.");
+  const requestEmail = getRequestUserEmail()?.trim().toLowerCase();
+  if (!requestEmail) fail("Sign in required.");
+  const email = isLocalDevIdentity(requestEmail) ? ADMIN_EMAIL : requestEmail;
   const db = getDb();
   const now = new Date().toISOString();
   let person = await findPersonByEmail(email);
