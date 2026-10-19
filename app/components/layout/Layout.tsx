@@ -155,18 +155,26 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 function NotSetUp({ message }: { message: string }) {
+  const needsInvitation = message.includes("Your account hasn't been set up.");
   return (
     <div className="tsd-pattern flex min-h-screen items-center justify-center bg-tsd-charcoal px-6 text-tsd-limestone">
       <div className="max-w-md text-center">
         <LogoMark className="mx-auto size-20" />
-        <h1 className="mt-6 font-display text-4xl">Your account isn't set up yet.</h1>
-        <p className="mt-3 text-sm text-tsd-limestone/75">{message}</p>
+        <h1 className="mt-6 font-display text-4xl">
+          {needsInvitation ? "Your account needs an invitation." : "We couldn't load the Academy."}
+        </h1>
+        <p className="mt-3 text-sm text-tsd-limestone/75">
+          {needsInvitation
+            ? "Ask your administrator to add your work email in People & Teams, then sign in again."
+            : "The server couldn't load your profile. Try again. If this keeps happening, ask your administrator to check the database connection and setup."}
+        </p>
         <button
           type="button"
-          onClick={() => signOut()}
+          onClick={() => needsInvitation ? signOut() : window.location.reload()}
           className="mt-8 inline-flex h-11 items-center gap-2 rounded-[3px] bg-tsd-gold px-5 text-sm font-medium text-tsd-charcoal hover:bg-tsd-gold/90"
         >
-          <IconLogout size={16} /> Sign out
+          {needsInvitation && <IconLogout size={16} />}
+          {needsInvitation ? "Sign out" : "Try again"}
         </button>
       </div>
     </div>
